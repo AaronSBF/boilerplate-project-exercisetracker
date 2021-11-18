@@ -41,8 +41,21 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({extended: false}))
 
 app.post("/api/users", (req, res)=>{ 
-  let username = req.body.username;
-  res.json({users: username})
+  let userName = req.body.username;
+  let find = User.findOne({username:userName})
+
+  if(find){ res.json({_id:find._id, username: find.username+"- user already exits"})
+
+delete find.__v} else{ 
+find = new User({ 
+  username: userName
+});
+find.save();
+res.json({username:find.username+" - new user created", _id:find._id})
+
+console.log(find)
+}
+
 })
 
 app.post("/api/users/:_id/exercises", function(res, req){ 
