@@ -2,10 +2,10 @@ const express = require('express')
 const app = express()
 const cors = require('cors')
 require('dotenv').config()
-var bodyParser = require("body-parser")
+const bodyParser = require("body-parser")
 const mongodb = require("mongodb")
 const mongoose = require("mongoose")
-const {ObjectId} = require("mongodb")
+const { ObjectId } = require("mongodb")
 
 mongoose.connect(process.env.MONGO_URI, {useNewUrlParser: true,
   useUnifiedTopology: true,
@@ -14,51 +14,62 @@ mongoose.connect(process.env.MONGO_URI, {useNewUrlParser: true,
 }
   );
 
+const connection = mongoose.connection;
+connection.on(
+	'error',
+	console.error.bind(console, 'MongoDB connection error:')
+);
+connection.once('open', () => {
+	console.log('MongoDB connection established');
+});
+
 const Schema = mongoose.Schema;
 
 const excerciseSchema = new Schema({ 
-description: String, 
-duration: Number, 
-date: Date
-})
+description: {type: String, required:true}, 
+duration: {type: Number, required:true}, 
+date: {type:Date, default: Date.now}
+});
 
 const userSchema = new Schema({ 
-username: String,
+username: {type:String, required:true},
 log: [excerciseSchema]
 
 })
 
-const User = mongoose.model("User", userSchema);
+
 const Exercise = mongoose.model("Exercise", excerciseSchema);
+const User = mongoose.model("User", userSchema);
 
 
-app.use(cors())
-app.use(express.static('public'))
+
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(cors());
+app.use(express.json());
+app.use('/public', express.static(process.cwd() + '/public'));
+
 app.get('/', (req, res) => {
-  res.sendFile(__dirname + '/views/index.html')
+	res.sendFile(__dirname + '/views/index.html');
 });
 
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({extended: false}))
-
-app.post("/api/users", (req, res)=>{ 
+app.post("/api/users", async function(req, res){ 
   let userName = req.body.username;
-  let find = User.findOne({username:userName})
+  let findOne = await User.findOne({username:userName})
 
-  if(find){ res.json({_id:find._id, username: find.username+"- user already exits"})
+  if(findOne){ res.json({_id:findOne._id, username: findOne.username+"- user already exits"})
 
-delete find.__v} else{ 
-find = new User({ 
+delete findOne.__v} else{ 
+findOne = new User({ 
   username: userName
 });
-find.save();
-res.json({username:find.username+" - new user created", _id:find._id})
+await findOne.save();
+res.json({_id: findOne._id, username:findOne.username+" - new user created"})
 
-console.log(find)
-delete find.__v
+console.log(findOne)
+delete findOne.__v
 }
 
-})
+});
 
 
 app.get("/api/users", (req, res)=>{ 
@@ -68,21 +79,21 @@ app.get("/api/users", (req, res)=>{
     if(!err){ 
       res.json(arrayOfUsers)
     }
-  })
+  });
   
-})
+});
 
 app.param('_id', function(req, res, next) {
 	req.body._id = req.params._id;
 	next();
 });
 
-app.post("/api/users/:_id/exercises", function(res, req){ 
+app.post("/api/users/:_id/exercises", async function(req, res){ 
 const resObj = {};
 let id = req.body._id;
 
 if(id.length == 24){
-  let findOne = User.findOne({_id: ObjectId(id)});
+  var findOne = await User.findOne({_id: ObjectId(id)});
 } else{ resObj["error"] = "no user with id:"+ id;
 return res.json(resObj);
 console.log(resObj);
@@ -96,7 +107,11 @@ let new_exercise = new Exercise({
 
 if(!findOne){resObj["error"] = "no user with id"+ id
 res.json(resObj)
-console.log(resObj)} else{User.findByIdAndUpdate(id, 
+console.log(resObj)
+            
+    }
+  
+  else{User.findByIdAndUpdate(id, 
   {$push: {log: new_exercise}},
   {new: true}, (err, updatedUser)=>{ 
     resObj["_id"] = id
@@ -106,22 +121,22 @@ console.log(resObj)} else{User.findByIdAndUpdate(id,
     resObj["date"] = new Date(new_exercise.date).toDateString()
     res.json(resObj)
     console.log(resObj)
-  }  )}
+  }  );}
 
-})
+});
 
-app.get("/api/users/:_id/logs", (req, res)=>{ 
+app.get("/api/users/:_id/logs", async function(req, res){ 
 const resObj = {};
 let id = req.body._id;
 
 if(id.length ==24){ 
-  var findOne =  User.findOne({_id: ObjectId(id)});
+  var findOne =  await User.findOne({_id: ObjectId(id)});
 }else{resObj["error"] ="no user with id: "+ id; 
 return res.json(resObj);
 console.log(resObj);}
 
 if(!findOne){ 
-resObj["erro"] = "no user with id: "+id;
+resObj["error"] = "no user with id: "+id;
 res.json(resObj);
 console.log(resObj);
 
@@ -129,7 +144,7 @@ console.log(resObj);
   resObj["_id"] =id;
   resObj["username"] = findOne.username;
   resObj["count"] = findOne.log.length;
-  resObj["log"] = findone.log.map(obj=>({description: obj.description,
+  resObj["log"] = findOne.log.map(obj=>({description: obj.description,
   duration:obj.duration,
 date:obj.date.toDateString()}))
 
@@ -146,7 +161,9 @@ if(req.query.from || req.query.to){
 console.log(exerciseDate);});
 }
 
-if(req.query.limit){resObj.log.slice(0, req.query.limit);}
+if (req.query.limit) {
+			resObj.log = resObj.log.slice(0, req.query.limit);
+		}
 resObj["count"]= resObj.log.length;
 
 res.json(resObj);
